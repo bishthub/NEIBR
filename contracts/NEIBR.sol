@@ -1,30 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract NEIBR is Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable, PausableUpgradeable, OwnableUpgradeable, UUPSUpgradeable {
-    /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
-        _disableInitializers();
-    }
+contract NEIBR is ERC20, ERC20Burnable, Pausable, Ownable {
+    uint8 private extra_fee_percent = 5;
+    address private thirdPartyAddress;
 
-    uint8 public extra_fee_percent = 5;
-    address private thirdPartyAddress = 0x;
-
-    function initialize() initializer public {
-        __ERC20_init("The Neighbor", "NEIBR");
-        __ERC20Burnable_init();
-        __Pausable_init();
-        __Ownable_init();
-        __UUPSUpgradeable_init();
-
+    constructor() ERC20("The Neighbour", "NEIBR") {
         _mint(msg.sender, 1000000000 * 10 ** decimals());
+        thirdPartyAddress = msg.sender;
     }
 
     mapping(address => bool) _isBlackListed;
@@ -37,13 +25,32 @@ contract NEIBR is Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable, Pau
         _unpause();
     }
 
-    function transfer(address to, uint256 amount) public returns (bool) {
+    function mint(address to, uint256 amount) public onlyOwner {
+        _mint(to, amount);
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
         require(amount>0, "Invalid amount entered");
         address owner = _msgSender();
         require(!_isBlackListed[to] || !_isBlackListed[owner], "This account is blacklisted");
         uint256 fee = (amount*extra_fee_percent)/100;
         _transfer(owner, thirdPartyAddress, fee);
         _transfer(owner, to, amount-fee);
+        return true;
+    }
+
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) public override returns (bool) {
+        require(amount>0, "Invalid amount entered");
+        address spender = _msgSender();
+        require(!_isBlackListed[to] || !_isBlackListed[from] || !_isBlackListed[spender], "This account is blacklisted");
+        _spendAllowance(from, spender, amount);
+        uint256 fee = (amount*extra_fee_percent)/100;
+        _transfer(from, thirdPartyAddress, fee);
+        _transfer(from, to, amount-fee);
         return true;
     }
 
@@ -59,8 +66,9 @@ contract NEIBR is Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable, Pau
         _isBlackListed[account] = false;
     }
 
-    function mint(address to, uint256 amount) public onlyOwner {
-        _mint(to, amount);
+    // set extra_fee_percent
+    function setExtraFee(uint8 fee_percent) external onlyOwner{
+        extra_fee_percent = fee_percent;
     }
 
     function _beforeTokenTransfer(address from, address to, uint256 amount)
@@ -70,10 +78,4 @@ contract NEIBR is Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable, Pau
     {
         super._beforeTokenTransfer(from, to, amount);
     }
-
-    function _authorizeUpgrade(address newImplementation)
-        internal
-        onlyOwner
-        override
-    {}
 }
